@@ -1,15 +1,11 @@
-#![feature(test)]
-
-extern crate test;
-
 use base64ct::{Base64, Encoding};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use crypto_bigint::BoxedUint;
 use hex_literal::hex;
 use rand::rngs::ChaCha8Rng;
 use rand_core::SeedableRng;
 use rsa::{Pkcs1v15Encrypt, Pkcs1v15Sign, RsaPrivateKey};
 use sha2::{Digest, Sha256};
-use test::Bencher;
 
 const DECRYPT_VAL: &str = "\
     XW4qfrpQDarEMBfPyIYE9UvuOFkbBi0tiGYbIOJPLMNe/LWuPD0BQ7ceqlOlPPcK\
@@ -76,47 +72,379 @@ fn get_key() -> RsaPrivateKey {
     .unwrap()
 }
 
-#[bench]
-fn bench_rsa_1024_gen_key(b: &mut Bencher) {
+fn bench_rsa_1024_gen_key(c: &mut Criterion) {
     let mut rng = ChaCha8Rng::from_seed([42; 32]);
 
-    b.iter(|| {
-        let key = RsaPrivateKey::new(&mut rng, 1024).unwrap();
-        test::black_box(key);
+    c.bench_function("rsa_1024_gen_key", |b| {
+        b.iter(|| {
+            let key = RsaPrivateKey::new(&mut rng, 1024).unwrap();
+            black_box(key);
+        })
     });
 }
 
-#[bench]
-fn bench_rsa_2048_gen_key(b: &mut Bencher) {
+fn bench_rsa_2048_gen_key(c: &mut Criterion) {
     let mut rng = ChaCha8Rng::from_seed([42; 32]);
 
-    b.iter(|| {
-        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-        test::black_box(key);
+    c.bench_function("rsa_2048_gen_key", |b| {
+        b.iter(|| {
+            let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+            black_box(key);
+        })
     });
 }
 
-#[bench]
-fn bench_rsa_2048_pkcsv1_decrypt(b: &mut Bencher) {
+fn bench_rsa_4096_gen_key(c: &mut Criterion) {
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+
+    c.bench_function("rsa_4096_gen_key", |b| {
+        b.iter(|| {
+            let key = RsaPrivateKey::new(&mut rng, 4096).unwrap();
+            black_box(key);
+        })
+    });
+}
+
+fn bench_rsa_2048_pkcsv1_decrypt(c: &mut Criterion) {
     let priv_key = get_key();
     let x = Base64::decode_vec(DECRYPT_VAL).unwrap();
 
-    b.iter(|| {
-        let res = priv_key.decrypt(Pkcs1v15Encrypt, &x).unwrap();
-        test::black_box(res);
+    c.bench_function("rsa_2048_pkcsv1_decrypt", |b| {
+        b.iter(|| {
+            let res = priv_key.decrypt(Pkcs1v15Encrypt, &x).unwrap();
+            black_box(res);
+        })
     });
 }
 
-#[bench]
-fn bench_rsa_2048_pkcsv1_sign_blinded(b: &mut Bencher) {
+fn bench_rsa_2048_pkcsv1_sign_blinded(c: &mut Criterion) {
     let priv_key = get_key();
     let digest = Sha256::digest(b"testing").to_vec();
     let mut rng = ChaCha8Rng::from_seed([42; 32]);
 
-    b.iter(|| {
-        let res = priv_key
-            .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha256>(), &digest)
-            .unwrap();
-        test::black_box(res);
+    c.bench_function("rsa_2048_pkcsv1_sign_blinded", |b| {
+        b.iter(|| {
+            let res = priv_key
+                .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha256>(), &digest)
+                .unwrap();
+            black_box(res);
+        })
     });
 }
+
+fn bench_rsa_2048_pkcsv1_encrypt(c: &mut Criterion) {
+    let pub_key = get_key().to_public_key();
+    let msg = b"message to encrypt for benchmark";
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+
+    c.bench_function("rsa_2048_pkcsv1_encrypt", |b| {
+        b.iter(|| {
+            let res = pub_key
+                .encrypt(&mut rng, Pkcs1v15Encrypt, msg)
+                .unwrap();
+            black_box(res);
+        })
+    });
+}
+
+fn bench_rsa_2048_pkcsv1_verify(c: &mut Criterion) {
+    let priv_key = get_key();
+    let pub_key = priv_key.to_public_key();
+    let digest = Sha256::digest(b"testing").to_vec();
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+    let sig = priv_key
+        .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha256>(), &digest)
+        .unwrap();
+
+    c.bench_function("rsa_2048_pkcsv1_verify", |b| {
+        b.iter(|| {
+            pub_key
+                .verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &sig)
+                .unwrap();
+        })
+    });
+}
+
+fn bench_rsa_4096_pkcsv1_decrypt(c: &mut Criterion) {
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+    let priv_key = RsaPrivateKey::new(&mut rng, 4096).unwrap();
+    let pub_key = priv_key.to_public_key();
+    let ciphertext = pub_key
+        .encrypt(&mut rng, Pkcs1v15Encrypt, b"message for 4096 decrypt bench")
+        .unwrap();
+
+    c.bench_function("rsa_4096_pkcsv1_decrypt", |b| {
+        b.iter(|| {
+            let res = priv_key.decrypt(Pkcs1v15Encrypt, &ciphertext).unwrap();
+            black_box(res);
+        })
+    });
+}
+
+fn bench_rsa_4096_pkcsv1_sign_blinded(c: &mut Criterion) {
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+    let priv_key = RsaPrivateKey::new(&mut rng, 4096).unwrap();
+    let digest = Sha256::digest(b"testing").to_vec();
+
+    c.bench_function("rsa_4096_pkcsv1_sign_blinded", |b| {
+        b.iter(|| {
+            let res = priv_key
+                .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha256>(), &digest)
+                .unwrap();
+            black_box(res);
+        })
+    });
+}
+
+fn bench_rsa_4096_pkcsv1_encrypt(c: &mut Criterion) {
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+    let priv_key = RsaPrivateKey::new(&mut rng, 4096).unwrap();
+    let pub_key = priv_key.to_public_key();
+    let msg = b"message to encrypt for 4096 benchmark";
+
+    c.bench_function("rsa_4096_pkcsv1_encrypt", |b| {
+        b.iter(|| {
+            let res = pub_key
+                .encrypt(&mut rng, Pkcs1v15Encrypt, msg)
+                .unwrap();
+            black_box(res);
+        })
+    });
+}
+
+fn bench_rsa_4096_pkcsv1_verify(c: &mut Criterion) {
+    let mut rng = ChaCha8Rng::from_seed([42; 32]);
+    let priv_key = RsaPrivateKey::new(&mut rng, 4096).unwrap();
+    let pub_key = priv_key.to_public_key();
+    let digest = Sha256::digest(b"testing").to_vec();
+    let sig = priv_key
+        .sign_with_rng(&mut rng, Pkcs1v15Sign::new::<Sha256>(), &digest)
+        .unwrap();
+
+    c.bench_function("rsa_4096_pkcsv1_verify", |b| {
+        b.iter(|| {
+            pub_key
+                .verify(Pkcs1v15Sign::new::<Sha256>(), &digest, &sig)
+                .unwrap();
+        })
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_rsa_1024_gen_key,
+    bench_rsa_2048_gen_key,
+    bench_rsa_4096_gen_key,
+    bench_rsa_2048_pkcsv1_decrypt,
+    bench_rsa_2048_pkcsv1_sign_blinded,
+    bench_rsa_2048_pkcsv1_encrypt,
+    bench_rsa_2048_pkcsv1_verify,
+    bench_rsa_4096_pkcsv1_decrypt,
+    bench_rsa_4096_pkcsv1_sign_blinded,
+    bench_rsa_4096_pkcsv1_encrypt,
+    bench_rsa_4096_pkcsv1_verify
+);
+
+#[cfg(feature = "aws-lc-bench")]
+mod aws_lc_bench {
+    use super::*;
+    use aws_lc_rs::{
+        digest,
+        rsa::{
+            KeySize, Pkcs1PrivateDecryptingKey, Pkcs1PublicEncryptingKey,
+            PrivateDecryptingKey,
+        },
+        signature::{self, KeyPair as _},
+    };
+
+    pub fn bench_aws_lc_rs_2048_gen_encrypt_key(c: &mut Criterion) {
+        c.bench_function("aws_lc_rs_2048_gen_encrypt_key", |b| {
+            b.iter(|| {
+                let key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+                black_box(key);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_gen_encrypt_key(c: &mut Criterion) {
+        c.bench_function("aws_lc_rs_4096_gen_encrypt_key", |b| {
+            b.iter(|| {
+                let key = PrivateDecryptingKey::generate(KeySize::Rsa4096).unwrap();
+                black_box(key);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_2048_gen_sign_key(c: &mut Criterion) {
+        c.bench_function("aws_lc_rs_2048_gen_sign_key", |b| {
+            b.iter(|| {
+                let key = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
+                black_box(key);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_gen_sign_key(c: &mut Criterion) {
+        c.bench_function("aws_lc_rs_4096_gen_sign_key", |b| {
+            b.iter(|| {
+                let key = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa4096).unwrap();
+                black_box(key);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_2048_pkcs1_decrypt(c: &mut Criterion) {
+        let priv_key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let pub_key = Pkcs1PublicEncryptingKey::new(priv_key.public_key()).unwrap();
+        let msg = b"message for aws-lc 2048 decrypt bench";
+        let mut ciphertext = vec![0u8; pub_key.ciphertext_size()];
+        let ciphertext = pub_key.encrypt(msg, &mut ciphertext).unwrap();
+
+        let pkcs1_priv = Pkcs1PrivateDecryptingKey::new(priv_key).unwrap();
+        let mut plaintext = vec![0u8; pkcs1_priv.min_output_size()];
+
+        c.bench_function("aws_lc_rs_2048_pkcs1_decrypt", |b| {
+            b.iter(|| {
+                let out = pkcs1_priv.decrypt(&ciphertext, &mut plaintext).unwrap();
+                black_box(out);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_pkcs1_decrypt(c: &mut Criterion) {
+        let priv_key = PrivateDecryptingKey::generate(KeySize::Rsa4096).unwrap();
+        let pub_key = Pkcs1PublicEncryptingKey::new(priv_key.public_key()).unwrap();
+        let msg = b"message for aws-lc 4096 decrypt bench";
+        let mut ciphertext = vec![0u8; pub_key.ciphertext_size()];
+        let ciphertext = pub_key.encrypt(msg, &mut ciphertext).unwrap();
+
+        let pkcs1_priv = Pkcs1PrivateDecryptingKey::new(priv_key).unwrap();
+        let mut plaintext = vec![0u8; pkcs1_priv.min_output_size()];
+
+        c.bench_function("aws_lc_rs_4096_pkcs1_decrypt", |b| {
+            b.iter(|| {
+                let out = pkcs1_priv.decrypt(&ciphertext, &mut plaintext).unwrap();
+                black_box(out);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_2048_pkcs1_encrypt(c: &mut Criterion) {
+        let priv_key = PrivateDecryptingKey::generate(KeySize::Rsa2048).unwrap();
+        let pub_key = Pkcs1PublicEncryptingKey::new(priv_key.public_key()).unwrap();
+        let msg = b"message to encrypt for aws-lc 2048 benchmark";
+        let mut ciphertext = vec![0u8; pub_key.ciphertext_size()];
+
+        c.bench_function("aws_lc_rs_2048_pkcs1_encrypt", |b| {
+            b.iter(|| {
+                let out = pub_key.encrypt(msg, &mut ciphertext).unwrap();
+                black_box(out);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_pkcs1_encrypt(c: &mut Criterion) {
+        let priv_key = PrivateDecryptingKey::generate(KeySize::Rsa4096).unwrap();
+        let pub_key = Pkcs1PublicEncryptingKey::new(priv_key.public_key()).unwrap();
+        let msg = b"message to encrypt for aws-lc 4096 benchmark";
+        let mut ciphertext = vec![0u8; pub_key.ciphertext_size()];
+
+        c.bench_function("aws_lc_rs_4096_pkcs1_encrypt", |b| {
+            b.iter(|| {
+                let out = pub_key.encrypt(msg, &mut ciphertext).unwrap();
+                black_box(out);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_2048_pkcs1_sign(c: &mut Criterion) {
+        let key_pair = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
+        let digest =
+            digest::Digest::import_less_safe(&Sha256::digest(b"testing"), &digest::SHA256).unwrap();
+        let mut sig = vec![0u8; key_pair.public_modulus_len()];
+
+        c.bench_function("aws_lc_rs_2048_pkcs1_sign", |b| {
+            b.iter(|| {
+                key_pair
+                    .sign_digest(&signature::RSA_PKCS1_SHA256, &digest, &mut sig)
+                    .unwrap();
+                black_box(&sig);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_pkcs1_sign(c: &mut Criterion) {
+        let key_pair = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa4096).unwrap();
+        let digest =
+            digest::Digest::import_less_safe(&Sha256::digest(b"testing"), &digest::SHA256).unwrap();
+        let mut sig = vec![0u8; key_pair.public_modulus_len()];
+
+        c.bench_function("aws_lc_rs_4096_pkcs1_sign", |b| {
+            b.iter(|| {
+                key_pair
+                    .sign_digest(&signature::RSA_PKCS1_SHA256, &digest, &mut sig)
+                    .unwrap();
+                black_box(&sig);
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_2048_pkcs1_verify(c: &mut Criterion) {
+        let key_pair = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa2048).unwrap();
+        let msg = b"testing";
+        let mut sig = vec![0u8; key_pair.public_modulus_len()];
+        key_pair
+            .sign(&signature::RSA_PKCS1_SHA256, &aws_lc_rs::rand::SystemRandom::new(), msg, &mut sig)
+            .unwrap();
+        let pub_key_bytes = key_pair.public_key().as_ref().to_vec();
+        let pub_key =
+            signature::UnparsedPublicKey::new(&signature::RSA_PKCS1_2048_8192_SHA256, pub_key_bytes);
+
+        c.bench_function("aws_lc_rs_2048_pkcs1_verify", |b| {
+            b.iter(|| {
+                pub_key.verify(msg, &sig).unwrap();
+            })
+        });
+    }
+
+    pub fn bench_aws_lc_rs_4096_pkcs1_verify(c: &mut Criterion) {
+        let key_pair = aws_lc_rs::rsa::KeyPair::generate(KeySize::Rsa4096).unwrap();
+        let msg = b"testing";
+        let mut sig = vec![0u8; key_pair.public_modulus_len()];
+        key_pair
+            .sign(&signature::RSA_PKCS1_SHA256, &aws_lc_rs::rand::SystemRandom::new(), msg, &mut sig)
+            .unwrap();
+        let pub_key_bytes = key_pair.public_key().as_ref().to_vec();
+        let pub_key =
+            signature::UnparsedPublicKey::new(&signature::RSA_PKCS1_2048_8192_SHA256, pub_key_bytes);
+
+        c.bench_function("aws_lc_rs_4096_pkcs1_verify", |b| {
+            b.iter(|| {
+                pub_key.verify(msg, &sig).unwrap();
+            })
+        });
+    }
+}
+
+#[cfg(feature = "aws-lc-bench")]
+criterion_group!(
+    aws_lc_benches,
+    aws_lc_bench::bench_aws_lc_rs_2048_gen_encrypt_key,
+    aws_lc_bench::bench_aws_lc_rs_4096_gen_encrypt_key,
+    aws_lc_bench::bench_aws_lc_rs_2048_gen_sign_key,
+    aws_lc_bench::bench_aws_lc_rs_4096_gen_sign_key,
+    aws_lc_bench::bench_aws_lc_rs_2048_pkcs1_decrypt,
+    aws_lc_bench::bench_aws_lc_rs_4096_pkcs1_decrypt,
+    aws_lc_bench::bench_aws_lc_rs_2048_pkcs1_encrypt,
+    aws_lc_bench::bench_aws_lc_rs_4096_pkcs1_encrypt,
+    aws_lc_bench::bench_aws_lc_rs_2048_pkcs1_sign,
+    aws_lc_bench::bench_aws_lc_rs_4096_pkcs1_sign,
+    aws_lc_bench::bench_aws_lc_rs_2048_pkcs1_verify,
+    aws_lc_bench::bench_aws_lc_rs_4096_pkcs1_verify
+);
+
+#[cfg(not(feature = "aws-lc-bench"))]
+criterion_main!(benches);
+
+#[cfg(feature = "aws-lc-bench")]
+criterion_main!(benches, aws_lc_benches);
